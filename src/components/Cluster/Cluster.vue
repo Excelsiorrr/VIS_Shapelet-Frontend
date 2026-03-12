@@ -192,7 +192,7 @@ const drawClusters = () => {
         type: "line",
         data: median.map((y, i) => [x[i], y]),
         lineStyle: {
-          color: cmaps[cluster.cluster_id % cmaps.length],
+          color: cmaps[cluster.cluster_id % cmaps.length] +"66",
           width: 2,
         },
         itemStyle: { opacity: 0 },
@@ -203,7 +203,7 @@ const drawClusters = () => {
         type: "line",
         data: centroid.map((y, i) => [x[i], y]),
         lineStyle: {
-          color: cmaps[cluster.cluster_id % cmaps.length] - 66,
+          color: cmaps[cluster.cluster_id % cmaps.length],
           width: 2,
           type: "dashed",
         },
