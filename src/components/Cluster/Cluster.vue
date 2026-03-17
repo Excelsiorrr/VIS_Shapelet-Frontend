@@ -32,11 +32,33 @@
         <div
           v-if="clusters"
           ref="chart"
-          style="width: 100%; height: 380px; "
+          style="width: 100%; height: 380px"
         ></div
       ></el-tab-pane>
 
-      <el-tab-pane label="Details" name="second">Details</el-tab-pane>
+      <el-tab-pane label="Details" name="second">
+        <div class="cluster-selector">
+          <el-select
+            v-model="chosenId"
+            filterable
+            style="width: 220px"
+            placeholder="Search Cluster"
+            @change="chooseCluster"
+          >
+            <el-option
+              v-for="id in allClusters"
+              :label="'Cluster ' + id"
+              :value="id"
+              :key="id"
+            />
+          </el-select>
+        </div>
+        <div class="cluster-info">
+          <b>Size:</b>&nbsp;{{ chosenCluster?.size }} |&nbsp;<b>Samples:&nbsp;</b>
+          {{ chosenCluster?.sample_ids_preview.join() }}
+        </div>
+        <div ref="detailChart" style="width: 100%; height: 340px"></div>
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -55,6 +77,7 @@ const datasetName = computed({
   set: (val) => {},
 });
 const chart = ref(null);
+const detailChart = ref(null);
 const summarySeries = ref();
 const clusterK = ref(4);
 const clusters = ref();
@@ -81,8 +104,17 @@ const oldTypes = ref(["median", "range", "centroid"]);
 const formatKey = (key) => {
   return key.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 };
+const chosenCluster = ref();
+const chosenId = ref();
+const chooseCluster = () => {
+  const index = clusters.value.findIndex(
+    (cluster) => cluster.cluster_id === chosenId.value
+  );
+  chosenCluster.value = clusters.value[index];
+  drawDetailCluster();
+};
 const selectClusters = (val) => {
-    let mychart = echarts.getInstanceByDom(chart.value);
+  let mychart = echarts.getInstanceByDom(chart.value);
   if (oldClusters.value.length > val.length) {
     let id = oldClusters.value.filter((id) => !val.includes(id))[0];
     console.log(id);
@@ -112,7 +144,7 @@ const selectClusters = (val) => {
   oldClusters.value = val;
 };
 const selectTypes = (val) => {
-    let mychart = echarts.getInstanceByDom(chart.value);
+  let mychart = echarts.getInstanceByDom(chart.value);
   if (oldTypes.value.length > val.length) {
     let id = oldTypes.value.filter((id) => !val.includes(id))[0];
     console.log(id);
@@ -166,6 +198,92 @@ const getClusters = async () => {
     console.log("error", error);
   }
 };
+const drawDetailCluster = () => {
+  if (!chosenCluster.value) return;
+
+  const mychart = echarts.init(detailChart.value);
+
+  const cluster = chosenCluster.value;
+
+  const x = cluster.median_sequence.map((_, i) => i);
+  const centroid = cluster.centroid_sequence.map((d) => d[0]);
+  const median = cluster.median_sequence.map((d) => d[0]);
+  const q25 = cluster.q25_sequence.map((d) => d[0]);
+  const q75 = cluster.q75_sequence.map((d) => d[0]);
+
+  const shadowData = q75
+    .concat(q25.slice().reverse())
+    .map((y, i) => [i, y]);
+
+  const baseColor = cmaps[0];
+
+  const series = [
+    {
+      name: "Range",
+      type: "line",
+      data: shadowData,
+      lineStyle: { opacity: 0 },
+      areaStyle: { color: baseColor + "22" },
+      showSymbol: false,
+    },
+    {
+      name: "Median",
+      type: "line",
+      data: median.map((y, i) => [x[i], y]),
+      lineStyle: {
+        color: baseColor,  
+        width: 3,
+      },
+      itemStyle: { opacity: 0 },
+      showSymbol: false,
+    },
+    {
+      name: "Centroid",
+      type: "line",
+      data: centroid.map((y, i) => [x[i], y]),
+      lineStyle: {
+        color: "#ff6b6b",  //contrast
+        width: 3,
+      },
+      itemStyle: { opacity: 0 },
+      showSymbol: false,
+    },
+  ];
+
+  const option = {
+    grid: { left: 10, right: 10, top: 50, bottom: 20 },
+
+    tooltip: {
+      trigger: "axis",
+      formatter: function (params) {
+        return params
+          .map((p) => `${p.seriesName}: ${p.data[1].toFixed(3)}`)
+          .join("<br/>");
+      },
+    },
+
+    legend: {
+      show: true,
+      top: 10,
+      left: "center",
+    },
+
+    xAxis: {
+      type: "value",
+      name: "Time step",
+    },
+
+    yAxis: {
+      type: "value",
+      name: "Value",
+      scale: true,
+    },
+
+    series,
+  };
+
+  mychart.setOption(option);
+};
 const drawClusters = () => {
   const mychart = echarts.init(chart.value);
   let series = clusters.value.flatMap((cluster) => {
@@ -192,7 +310,7 @@ const drawClusters = () => {
         type: "line",
         data: median.map((y, i) => [x[i], y]),
         lineStyle: {
-          color: cmaps[cluster.cluster_id % cmaps.length] +"66",
+          color: cmaps[cluster.cluster_id % cmaps.length] + "66",
           width: 2,
         },
         itemStyle: { opacity: 0 },
@@ -268,5 +386,13 @@ const drawClusters = () => {
     margin-top: 0;
     margin-left: 12px;
   }
+}
+
+.cluster-info {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+  line-height:32px;
+  font-size: 16px;
 }
 </style>
