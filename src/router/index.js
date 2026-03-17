@@ -6,6 +6,11 @@ const routes = [
     name: 'DataPanel',
     component: import('../views/PartA.vue')
   },
+  {
+    path: '/shapelet-library',
+    name: 'ShapeletLibraryPanel',
+    component: import('../views/PartB.vue')
+  }
 ]
 
 const router = createRouter({
