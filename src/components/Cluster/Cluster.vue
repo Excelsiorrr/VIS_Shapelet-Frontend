@@ -12,14 +12,20 @@
     <el-tabs v-model="activeName" class="cluster-tabs" @tab-click="handleClick">
       <el-tab-pane label="Summary" name="first" v-if="clusters">
         <div class="checkboxes">
-          <el-checkbox-group v-model="activeClusters" @change="selectClusters">
-            <el-checkbox
-              v-for="id in allClusters"
-              :label="'Cluster ' + id"
-              :value="id"
-              :key="id"
-            />
-          </el-checkbox-group>
+          <div class="cluster-checkbox">
+            Clusters:&nbsp;&nbsp;
+            <el-checkbox-group
+              v-model="activeClusters"
+              @change="selectClusters"
+            >
+              <el-checkbox
+                v-for="id in allClusters"
+                :label="id"
+                :value="id"
+                :key="id"
+              />
+            </el-checkbox-group>
+          </div>
           <el-checkbox-group v-model="activeTypes" @change="selectTypes">
             <el-checkbox
               v-for="type in ['median', 'range', 'centroid']"
@@ -32,7 +38,7 @@
         <div
           v-if="clusters"
           ref="chart"
-          style="width: 100%; height: 380px"
+          style="width: 100%; height: 360px"
         ></div
       ></el-tab-pane>
 
@@ -54,7 +60,9 @@
           </el-select>
         </div>
         <div class="cluster-info">
-          <b>Size:</b>&nbsp;{{ chosenCluster?.size }} |&nbsp;<b>Samples:&nbsp;</b>
+          <b>Size:</b>&nbsp;{{ chosenCluster?.size }} |&nbsp;<b
+            >Samples:&nbsp;</b
+          >
           {{ chosenCluster?.sample_ids_preview.join() }}
         </div>
         <div ref="detailChart" style="width: 100%; height: 340px"></div>
@@ -211,9 +219,7 @@ const drawDetailCluster = () => {
   const q25 = cluster.q25_sequence.map((d) => d[0]);
   const q75 = cluster.q75_sequence.map((d) => d[0]);
 
-  const shadowData = q75
-    .concat(q25.slice().reverse())
-    .map((y, i) => [i, y]);
+  const shadowData = q75.concat(q25.slice().reverse()).map((y, i) => [i, y]);
 
   const baseColor = cmaps[0];
 
@@ -231,7 +237,7 @@ const drawDetailCluster = () => {
       type: "line",
       data: median.map((y, i) => [x[i], y]),
       lineStyle: {
-        color: baseColor,  
+        color: baseColor,
         width: 3,
       },
       itemStyle: { opacity: 0 },
@@ -242,7 +248,7 @@ const drawDetailCluster = () => {
       type: "line",
       data: centroid.map((y, i) => [x[i], y]),
       lineStyle: {
-        color: "#ff6b6b",  //contrast
+        color: "#ff6b6b", //contrast
         width: 3,
       },
       itemStyle: { opacity: 0 },
@@ -368,6 +374,10 @@ const drawClusters = () => {
 .checkboxes {
   display: flex;
   justify-content: space-between;
+  .cluster-checkbox {
+    display: flex;
+    align-items: center;
+  }
 }
 .one-line {
   display: flex;
@@ -392,7 +402,7 @@ const drawClusters = () => {
   display: flex;
   align-items: center;
   margin-top: 8px;
-  line-height:32px;
+  line-height: 32px;
   font-size: 16px;
 }
 </style>
