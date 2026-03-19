@@ -94,6 +94,9 @@
           </el-collapse-item>
         </el-collapse>
       </el-card>
+      <div class="router-buttons">
+        <el-button @click="toPartB" type="primary">Show Shapelet Library Panel</el-button>
+      </div>
     </div>
     <div class="partA-content">
       <cluster-content v-model:datasetName="datasetName" />
@@ -187,6 +190,9 @@ const getBottomData = () => {
   showBottom.value = false;
   showBottom.value = true;
 };
+const toPartB = () => {
+  router.push({name: "ShapeletLibraryPanel"})
+}
 const getDatasetList = async () => {
   try {
     let response = await axios({
@@ -380,6 +386,9 @@ onMounted(() => {
   }
 }
 .info-leftbar {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
   max-width: 400px;
   min-width: 400px;
   font-size: 20px;
@@ -390,7 +399,11 @@ onMounted(() => {
   height: 99vh;
   overflow-y: auto; /* 当内容过多时y轴出现滚动条 */
   background-color: #e0eeee55;
-
+  .router-buttons {
+    display: flex;
+    justify-content: end;
+    height: 5vh;
+  }
   .metadata-panel {
     display: flex;
     flex-direction: column;
