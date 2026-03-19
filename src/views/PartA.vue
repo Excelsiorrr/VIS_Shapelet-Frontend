@@ -144,7 +144,10 @@
         </div>
       </div>
       <div class="partA-bottom" v-if="showBottom">
-        <samples-content />
+        <samples-content
+          :datasetName="datasetName"
+          :classDistribution="metrics?.class_distribution || {}"
+        />
         <margin-content
           :datasetName="datasetName"
           :threshold="margin_threshold"
