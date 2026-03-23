@@ -220,10 +220,11 @@ const getMetadata = async () => {
       url,
     });
     metadata.value = response.data;
-    meta_loading.value = false;
     console.log(metadata.value);
   } catch (error) {
     console.log("error", error);
+  } finally {
+    meta_loading.value = false;
   }
 };
 const formatKey = (key) => {
@@ -255,13 +256,14 @@ const getDatametrics = async () => {
       },
     });
     console.log(response);
-    metrics_loading.value = false;
     metrics.value = response.data;
     nextTick(() => {
       drawDistributionChart();
     });
   } catch (error) {
     console.log("error", error);
+  } finally {
+    metrics_loading.value = false;
   }
 };
 const drawDistributionChart = () => {

@@ -1,10 +1,14 @@
-<template>
+﻿<template>
   <div class="samples-content">
     <div class="header-line">
       <div class="title">Test Samples Clustered By Predicted Class</div>
       <div class="meta">
         <span>Total Samples: {{ allSummaries.length }}</span>
         <span v-if="activeClusterKey">Loaded In Cluster: {{ activeClusterLoadedCount }}</span>
+        <span v-if="activeClusterDepthSummary">
+          Soft Depth Range: {{ toFixedSafe(activeClusterDepthSummary.minDepth) }} ~
+          {{ toFixedSafe(activeClusterDepthSummary.maxDepth) }}
+        </span>
         <el-button
           type="primary"
           plain
@@ -38,39 +42,59 @@
         />
       </el-tabs>
 
-      <div class="cluster-loading" v-if="clusterLoading">Loading all sequences in this cluster...</div>
-
-
+      <div class="cluster-loading" v-if="clusterLoading">
+        Loading and computing soft-depth profiles for this cluster...
+      </div>
 
       <div class="content-line">
         <div ref="chartRef" class="cluster-chart"></div>
 
         <div class="sample-list">
-          <div class="list-title">Samples In This Cluster</div>
+          <div class="list-title">Samples In This Cluster (sorted by soft depth)</div>
+          <div class="list-tools">
+            <el-switch
+              v-model="onlyMisclassified"
+              inline-prompt
+              active-text="pred!=true"
+              inactive-text="all"
+            />
+            <span class="selected-count">Selected: {{ selectedSampleIds.length }}</span>
+          </div>
           <el-table
-            :data="activeClusterSamples"
-            :current-row-key="selectedSampleId || undefined"
-            height="320"
+            ref="sampleTableRef"
+            :data="displayClusterSamples"
+            height="420"
             row-key="sample_id"
             highlight-current-row
-            @current-change="onCurrentRowChange"
+            :reserve-selection="true"
+            @selection-change="onTableSelectionChange"
+            @row-click="onTableRowClick"
           >
-            <el-table-column prop="sample_id" label="Sample" min-width="95" />
-            <el-table-column prop="label" label="True" width="65" />
-            <el-table-column label="Margin" width="88">
+            <el-table-column type="selection" width="45" />
+            <el-table-column prop="sample_id" label="Sample" min-width="90" />
+            <el-table-column prop="label" label="True" width="60" />
+            <el-table-column label="Pred" width="60">
+              <template #default="{ row }">
+                {{ row.prediction?.pred_class ?? "N/A" }}
+              </template>
+            </el-table-column>
+            <el-table-column label="Margin" width="86">
               <template #default="{ row }">
                 {{ toFixedSafe(row.prediction?.margin) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="Depth" width="86">
+              <template #default="{ row }">
+                {{ toFixedSafe(row.soft_depth) }}
               </template>
             </el-table-column>
           </el-table>
         </div>
       </div>
 
-      <div class="detail-line" v-if="selectedSample">
-        <span>Selected: {{ selectedSample.sample_id }}</span>
-        <span>True Label: {{ selectedSample.label }}</span>
-        <span>Pred Class: {{ selectedSample.prediction?.pred_class }}</span>
-        <span>Margin: {{ toFixedSafe(selectedSample.prediction?.margin) }}</span>
+      <div class="detail-line" v-if="selectedSamples.length">
+        <span>Selected Count: {{ selectedSamples.length }}</span>
+        <span>IDs: {{ selectedSamples.map((s) => s.sample_id).join(", ") }}</span>
       </div>
     </div>
 
@@ -100,12 +124,19 @@ const errorMessage = ref("");
 const allSummaries = ref([]);
 const clusterMap = ref({});
 const clusterDetailCache = ref({});
+const clusterDepthCache = ref({});
 const activeClusterKey = ref("");
-const selectedSampleId = ref("");
+const selectedSampleIds = ref([]);
+const onlyMisclassified = ref(false);
 
 const chartRef = ref(null);
+const sampleTableRef = ref(null);
 let chartInstance = null;
 let summaryLoadToken = 0;
+
+const CENTRAL_RATIO = 0.5;
+const BAND_MODE = "quantile";
+const OUTER_CURVE_TOP_K = 200;
 
 const classLabels = computed(() => {
   const labels = Object.keys(props.classDistribution || {}).map((v) => Number(v));
@@ -118,15 +149,55 @@ const clusterKeys = computed(() => {
     .sort((a, b) => a - b);
 });
 
+const activeClusterDepthState = computed(() => {
+  const key = Number(activeClusterKey.value);
+  if (Number.isNaN(key)) return null;
+  return clusterDepthCache.value[key] || null;
+});
+
+const activeClusterDepthSummary = computed(() => {
+  const state = activeClusterDepthState.value;
+  if (!state) return null;
+  return {
+    minDepth: state.minDepth,
+    maxDepth: state.maxDepth,
+  };
+});
+
 const activeClusterSamples = computed(() => {
   const key = Number(activeClusterKey.value);
   if (Number.isNaN(key) || !clusterMap.value[key]) return [];
-  return clusterMap.value[key].samples;
+  const sortedSamples = activeClusterDepthState.value?.sortedSamples;
+  if (sortedSamples) return sortedSamples;
+  const baseSamples = clusterMap.value[key].samples || [];
+  const depthBySampleId = activeClusterDepthState.value?.depthBySampleId || {};
+  return [...baseSamples]
+    .map((sample) => ({
+      ...sample,
+      soft_depth: depthBySampleId[sample.sample_id] ?? null,
+    }))
+    .sort((a, b) => {
+      const da = typeof a.soft_depth === "number" ? a.soft_depth : -Infinity;
+      const db = typeof b.soft_depth === "number" ? b.soft_depth : -Infinity;
+      return db - da;
+    });
 });
 
-const selectedSample = computed(() => {
-  if (!selectedSampleId.value) return null;
-  return activeClusterSamples.value.find((s) => s.sample_id === selectedSampleId.value) || null;
+const isMisclassified = (sample) => {
+  const pred = sample?.prediction?.pred_class;
+  const label = sample?.label;
+  return typeof pred === "number" && typeof label === "number" && pred !== label;
+};
+
+const displayClusterSamples = computed(() => {
+  if (!onlyMisclassified.value) return activeClusterSamples.value;
+  return activeClusterSamples.value.filter((sample) => isMisclassified(sample));
+});
+
+const selectedSamples = computed(() => {
+  if (!selectedSampleIds.value.length) return [];
+  const idSet = new Set(selectedSampleIds.value.map((id) => String(id)));
+  return activeClusterSamples.value.filter((sample) => idSet.has(String(sample.sample_id)));
 });
 
 const activeClusterLoadedCount = computed(() => {
@@ -138,12 +209,17 @@ const activeClusterLoadedCount = computed(() => {
 });
 
 const toFixedSafe = (num) => {
-  if (typeof num !== "number") return "N/A";
+  if (typeof num !== "number" || Number.isNaN(num)) return "N/A";
   return num.toFixed(3);
 };
 
+const normalizeSelectedIds = (ids) => {
+  const uniq = new Set((ids || []).map((id) => String(id)).filter(Boolean));
+  return [...uniq];
+};
+
 const normalizeSequence = (sequence) => {
-  return (sequence || []).map((point) => (Array.isArray(point) ? point[0] : point));
+  return (sequence || []).map((point) => (Array.isArray(point) ? Number(point[0]) : Number(point)));
 };
 
 const getClassSamplesOnePage = async (label, offset, limit) => {
@@ -220,10 +296,11 @@ const ensureChart = () => {
   chartInstance = echarts.init(chartRef.value);
   chartInstance.on("click", async (params) => {
     const seriesId = params?.seriesId || "";
-    if (!seriesId.startsWith("bg-")) return;
-    const sampleId = seriesId.replace("bg-", "");
+    // Only data curves with prefix `sample-` are clickable sample lines.
+    if (!seriesId.startsWith("sample-")) return;
+    const sampleId = seriesId.slice(7);
     if (!sampleId) return;
-    await selectSample(sampleId);
+    await toggleSampleSelection(sampleId);
   });
 };
 
@@ -233,105 +310,342 @@ const renderEmptyChart = () => {
   chartInstance.clear();
 };
 
-const renderBackgroundForCluster = (clusterKey) => {
+const trimSequencesToMatrix = (details) => {
+  const parsed = details
+    .map((detail) => ({
+      sampleId: String(detail.sample_id),
+      seq: normalizeSequence(detail.sequence),
+    }))
+    .filter((item) => item.seq.length > 1 && item.seq.every((v) => Number.isFinite(v)));
+
+  if (!parsed.length) return null;
+
+  const minLen = parsed.reduce((m, item) => Math.min(m, item.seq.length), parsed[0].seq.length);
+  const sampleIds = parsed.map((item) => item.sampleId);
+  const X = parsed.map((item) => item.seq.slice(0, minLen));
+  return { sampleIds, X, T: minLen };
+};
+
+const mean1d = (arr) => arr.reduce((sum, v) => sum + v, 0) / arr.length;
+
+const std1d = (arr, eps = 1e-8) => {
+  const m = mean1d(arr);
+  const variance = arr.reduce((sum, v) => sum + (v - m) * (v - m), 0) / arr.length;
+  return Math.max(Math.sqrt(variance), eps);
+};
+
+const quantile1d = (arr, q) => {
+  if (!arr.length) return 0;
+  if (arr.length === 1) return arr[0];
+  const sorted = [...arr].sort((a, b) => a - b);
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  if (lo === hi) return sorted[lo];
+  const frac = pos - lo;
+  return sorted[lo] * (1 - frac) + sorted[hi] * frac;
+};
+
+const computeSoftDepthAgainstMean = (X, eps = 1e-8) => {
+  const N = X.length;
+  const T = X[0].length;
+
+  const meanCurve = Array.from({ length: T }, (_, t) => mean1d(X.map((row) => row[t])));
+  const sigmaT = Array.from({ length: T }, (_, t) => std1d(X.map((row) => row[t]), eps));
+
+  const W = X.map((row) =>
+    row.map((value, t) => {
+      const diff = value - meanCurve[t];
+      const denom = 2 * sigmaT[t] * sigmaT[t];
+      return Math.exp(-(diff * diff) / denom);
+    })
+  );
+
+  const depth = W.map((row) => mean1d(row));
+  return { depth, meanCurve, sigmaT, W };
+};
+
+const getCentralBandByDepth = (X, depth, centralRatio = 0.5, bandMode = "quantile") => {
+  const N = X.length;
+  const T = X[0].length;
+  const k = Math.max(1, Math.ceil(N * centralRatio));
+
+  const orderHighToLow = Array.from({ length: N }, (_, i) => i).sort((a, b) => depth[b] - depth[a]);
+  const centralIdx = orderHighToLow.slice(0, k);
+  const centralCurves = centralIdx.map((idx) => X[idx]);
+
+  const lowerBand = [];
+  const upperBand = [];
+
+  for (let t = 0; t < T; t += 1) {
+    const values = centralCurves.map((row) => row[t]);
+    if (bandMode === "minmax") {
+      lowerBand.push(Math.min(...values));
+      upperBand.push(Math.max(...values));
+    } else {
+      lowerBand.push(quantile1d(values, 0.25));
+      upperBand.push(quantile1d(values, 0.75));
+    }
+  }
+
+  return { centralIdx, centralCurves, lowerBand, upperBand, orderHighToLow };
+};
+
+const buildDepthState = (clusterKey) => {
+  const cache = clusterDetailCache.value[clusterKey];
+  if (!cache?.loaded) return null;
+  const details = Object.values(cache.detailsById || {}).filter((detail) => detail?.sequence?.length);
+  const matrixData = trimSequencesToMatrix(details);
+  if (!matrixData) return null;
+
+  const { sampleIds, X, T } = matrixData;
+  const { depth, meanCurve, W } = computeSoftDepthAgainstMean(X);
+  const orderLowToHigh = Array.from({ length: depth.length }, (_, i) => i).sort((a, b) => depth[a] - depth[b]);
+  const { centralIdx, lowerBand, upperBand, orderHighToLow } = getCentralBandByDepth(
+    X,
+    depth,
+    CENTRAL_RATIO,
+    BAND_MODE
+  );
+
+  const depthBySampleId = {};
+  sampleIds.forEach((sampleId, idx) => {
+    depthBySampleId[sampleId] = depth[idx];
+  });
+
+  const centralSet = new Set(centralIdx);
+  const outerIndices = Array.from({ length: X.length }, (_, i) => i).filter((idx) => !centralSet.has(idx));
+  const outerTopK = outerIndices.sort((a, b) => depth[a] - depth[b]).slice(0, OUTER_CURVE_TOP_K);
+
+  const baseSamples = clusterMap.value[clusterKey]?.samples || [];
+  const sampleById = {};
+  baseSamples.forEach((sample) => {
+    sampleById[String(sample.sample_id)] = sample;
+  });
+  const sortedSamples = sampleIds
+    .map((sampleId) => {
+      const base = sampleById[sampleId];
+      if (!base) return null;
+      return {
+        ...base,
+        soft_depth: depthBySampleId[sampleId] ?? null,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+      const da = typeof a.soft_depth === "number" ? a.soft_depth : -Infinity;
+      const db = typeof b.soft_depth === "number" ? b.soft_depth : -Infinity;
+      return db - da;
+    });
+
+  const WSorted = orderHighToLow.map((idx) => W[idx]);
+
+  return {
+    sampleIds,
+    X,
+    T,
+    depth,
+    meanCurve,
+    W,
+    WSorted,
+    orderLowToHigh,
+    orderHighToLow,
+    centralIdx,
+    lowerBand,
+    upperBand,
+    outerTopK,
+    minDepth: Math.min(...depth),
+    maxDepth: Math.max(...depth),
+    depthBySampleId,
+    sortedSamples,
+  };
+};
+
+const renderSoftDepthPanels = (clusterKey) => {
   ensureChart();
   if (!chartInstance) return;
-  const cache = clusterDetailCache.value[clusterKey];
-  if (!cache?.loaded) return;
-  const details = Object.values(cache.detailsById || {});
-  if (!details.length) {
+
+  const state = clusterDepthCache.value[clusterKey];
+  if (!state) {
     renderEmptyChart();
     return;
   }
 
-  const xLen = normalizeSequence(details[0].sequence).length;
-  const backgroundSeries = details.map((detail) => ({
-    id: `bg-${detail.sample_id}`,
-    name: `Sample ${detail.sample_id}`,
+  const {
+    sampleIds,
+    X,
+    T,
+    meanCurve,
+    outerTopK,
+    lowerBand,
+    upperBand,
+  } = state;
+
+  const xAxisData = Array.from({ length: T }, (_, i) => i);
+  const selectedSet = new Set(selectedSampleIds.value.map((id) => String(id)));
+
+  const panelSeries = outerTopK.map((idx) => ({
+    id: `sample-${sampleIds[idx]}`,
+    name: `Outer Sample ${sampleIds[idx]}`,
     type: "line",
-    data: normalizeSequence(detail.sequence),
+    xAxisIndex: 0,
+    yAxisIndex: 0,
+    data: X[idx],
     showSymbol: false,
-    smooth: false,
     lineStyle: {
-      width: 1,
-      opacity: 0.14,
-      color: "#2563eb",
-    },
-    emphasis: {
-      lineStyle: {
-        width: 1.8,
-        opacity: 0.7,
-        color: "#1d4ed8",
-      },
+      width: 0.9,
+      opacity: 0.4,
+      color: "#d1d5db",
     },
     z: 1,
   }));
 
-  const selectedOverlay = {
-    id: "selected-overlay",
-    name: "Selected",
-    type: "line",
-    data: [],
-    showSymbol: false,
-    smooth: false,
-    lineStyle: {
-      width: 2.6,
-      color: "#ef4444",
-      opacity: 1,
+  panelSeries.push(
+    {
+      id: "p3-band-polygon",
+      name: `Central band (top ${Math.ceil(CENTRAL_RATIO * 100)}%)`,
+      type: "custom",
+      xAxisIndex: 0,
+      yAxisIndex: 0,
+      data: [0],
+      silent: true,
+      tooltip: { show: false },
+      z: 3,
+      renderItem: (params, api) => {
+        const points = [];
+        for (let i = 0; i < xAxisData.length; i += 1) {
+          points.push(api.coord([xAxisData[i], upperBand[i]]));
+        }
+        for (let i = xAxisData.length - 1; i >= 0; i -= 1) {
+          points.push(api.coord([xAxisData[i], lowerBand[i]]));
+        }
+        return {
+          type: "polygon",
+          shape: { points },
+          style: api.style({
+            fill: "rgba(249, 115, 22, 0.36)",
+            stroke: "none",
+          }),
+        };
+      },
     },
-    z: 10,
-  };
+    {
+      id: "p3-band-lower-line",
+      name: "Lower band",
+      type: "line",
+      xAxisIndex: 0,
+      yAxisIndex: 0,
+      data: lowerBand,
+      showSymbol: false,
+      lineStyle: {
+        width: 2,
+        color: "#f97316",
+        opacity: 0.95,
+      },
+      z: 4,
+    },
+    {
+      id: "p3-band-upper-line",
+      name: "Upper band",
+      type: "line",
+      xAxisIndex: 0,
+      yAxisIndex: 0,
+      data: upperBand,
+      showSymbol: false,
+      lineStyle: {
+        width: 2,
+        color: "#f97316",
+        opacity: 0.95,
+      },
+      z: 4,
+    },
+    {
+      id: "p3-mean",
+      name: "Mean curve",
+      type: "line",
+      xAxisIndex: 0,
+      yAxisIndex: 0,
+      data: meanCurve,
+      showSymbol: false,
+      lineStyle: {
+        width: 3.2,
+        color: "#111827",
+      },
+      z: 5,
+    },
+    {
+      id: "p3-selected-anchor",
+      name: "Selected anchor",
+      type: "line",
+      xAxisIndex: 0,
+      yAxisIndex: 0,
+      data: [],
+      showSymbol: false,
+      lineStyle: {
+        width: 0,
+        opacity: 0,
+      },
+      z: 6,
+    },
+  );
+
+  const selectedPalette = ["#ef4444", "#dc2626", "#b91c1c", "#f43f5e", "#e11d48", "#f97316"];
+  const selectedSeries = sampleIds
+    .map((sampleId, idx) => ({ sampleId, idx }))
+    .filter((item) => selectedSet.has(item.sampleId))
+    .map((item, i) => ({
+      id: `selected-${item.sampleId}`,
+      name: `Selected ${item.sampleId}`,
+      type: "line",
+      xAxisIndex: 0,
+      yAxisIndex: 0,
+      data: X[item.idx],
+      showSymbol: false,
+      lineStyle: {
+        width: 2.8,
+        color: selectedPalette[i % selectedPalette.length],
+        opacity: 1,
+      },
+      z: 7,
+    }));
+  panelSeries.push(...selectedSeries);
 
   chartInstance.setOption(
     {
       animation: false,
-      grid: { left: 40, right: 20, top: 30, bottom: 30 },
-      tooltip: {
-        trigger: "item",
-        formatter: (params) => {
-          if (typeof params.value !== "number") return `${params.seriesName}`;
-          return `${params.seriesName}<br/>t=${params.dataIndex}<br/>value=${toFixedSafe(params.value)}`;
+      title: {
+        text: `(Soft-Depth Panel) Mean + Central Band + Selected + Top-${OUTER_CURVE_TOP_K} Outer Curves`,
+        left: 30,
+        top: 6,
+        textStyle: { fontSize: 12, fontWeight: 600, color: "#374151" },
+      },
+      grid: { left: 50, right: 30, top: 38, bottom: 40 },
+      xAxis: [
+        {
+          type: "category",
+          data: xAxisData,
+          gridIndex: 0,
+          boundaryGap: false,
+          name: "Time",
+          axisLabel: { fontSize: 10 },
         },
+      ],
+      yAxis: [
+        {
+          type: "value",
+          gridIndex: 0,
+          scale: true,
+          name: "Value",
+          axisLabel: { fontSize: 10 },
+        },
+      ],
+      tooltip: {
+        trigger: "axis",
       },
-      xAxis: {
-        type: "category",
-        data: Array.from({ length: xLen }, (_, i) => i),
-        name: "Time",
-      },
-      yAxis: {
-        type: "value",
-        name: "Value",
-        scale: true,
-      },
-      series: [...backgroundSeries, selectedOverlay],
+      series: panelSeries,
     },
     true
   );
-};
-
-const updateSelectedOverlay = (detail) => {
-  ensureChart();
-  if (!chartInstance) return;
-  if (!detail?.sequence?.length) {
-    chartInstance.setOption({
-      series: [
-        {
-          id: "selected-overlay",
-          data: [],
-        },
-      ],
-    });
-    return;
-  }
-  chartInstance.setOption({
-    series: [
-      {
-        id: "selected-overlay",
-        name: `Selected ${detail.sample_id}`,
-        data: normalizeSequence(detail.sequence),
-      },
-    ],
-  });
 };
 
 const ensureClusterDetailsLoaded = async (clusterKey) => {
@@ -374,29 +688,63 @@ const ensureClusterDetailsLoaded = async (clusterKey) => {
   await loadingPromise;
 };
 
-const selectSample = async (sampleId) => {
-  if (!sampleId || !props.datasetName) return;
-  selectedSampleId.value = sampleId;
-  try {
-    const detail = await getSampleDetail(sampleId);
+const recomputeAndRenderCluster = async (clusterKey) => {
+  const key = Number(clusterKey);
+  if (Number.isNaN(key)) {
+    renderEmptyChart();
+    return;
+  }
+  const depthState = buildDepthState(key);
+  if (!depthState) {
+    clusterDepthCache.value[key] = null;
+    renderEmptyChart();
+    return;
+  }
+  clusterDepthCache.value[key] = depthState;
 
-    const key = Number(activeClusterKey.value);
-    if (!Number.isNaN(key)) {
-      if (!clusterDetailCache.value[key]) {
-        clusterDetailCache.value[key] = { loaded: false, detailsById: {} };
-      }
-      clusterDetailCache.value[key].detailsById = clusterDetailCache.value[key].detailsById || {};
-      clusterDetailCache.value[key].detailsById[sampleId] = detail;
+  renderSoftDepthPanels(key);
+};
+
+const syncTableSelection = async () => {
+  if (!sampleTableRef.value) return;
+  await nextTick();
+  sampleTableRef.value.clearSelection();
+  const selectedSet = new Set(selectedSampleIds.value.map((id) => String(id)));
+  displayClusterSamples.value.forEach((row) => {
+    if (selectedSet.has(String(row.sample_id))) {
+      sampleTableRef.value.toggleRowSelection(row, true);
     }
-    updateSelectedOverlay(detail);
-  } catch (error) {
-    console.log("error", error);
+  });
+};
+
+const toggleSampleSelection = async (sampleId) => {
+  if (!sampleId) return;
+  const id = String(sampleId);
+  const selectedSet = new Set(selectedSampleIds.value.map((v) => String(v)));
+  if (selectedSet.has(id)) {
+    selectedSet.delete(id);
+  } else {
+    selectedSet.add(id);
+  }
+  selectedSampleIds.value = [...selectedSet];
+  await syncTableSelection();
+  const key = Number(activeClusterKey.value);
+  if (!Number.isNaN(key) && clusterDepthCache.value[key]) {
+    renderSoftDepthPanels(key);
   }
 };
 
-const onCurrentRowChange = async (row) => {
+const onTableSelectionChange = (rows) => {
+  selectedSampleIds.value = normalizeSelectedIds(rows.map((row) => row.sample_id));
+  const key = Number(activeClusterKey.value);
+  if (!Number.isNaN(key) && clusterDepthCache.value[key]) {
+    renderSoftDepthPanels(key);
+  }
+};
+
+const onTableRowClick = async (row) => {
   if (!row?.sample_id) return;
-  await selectSample(row.sample_id);
+  await toggleSampleSelection(row.sample_id);
 };
 
 const loadAllSummaries = async () => {
@@ -404,11 +752,13 @@ const loadAllSummaries = async () => {
     allSummaries.value = [];
     clusterMap.value = {};
     clusterDetailCache.value = {};
+    clusterDepthCache.value = {};
     activeClusterKey.value = "";
-    selectedSampleId.value = "";
+    selectedSampleIds.value = [];
     renderEmptyChart();
     return;
   }
+
   const token = summaryLoadToken + 1;
   summaryLoadToken = token;
   summaryLoading.value = true;
@@ -428,8 +778,11 @@ const loadAllSummaries = async () => {
 
     clusterMap.value = buildClusterMapFromSummaries(allSummaries.value);
     clusterDetailCache.value = {};
-    selectedSampleId.value = "";
-    const keys = Object.keys(clusterMap.value).map((v) => Number(v)).sort((a, b) => a - b);
+    clusterDepthCache.value = {};
+    selectedSampleIds.value = [];
+    const keys = Object.keys(clusterMap.value)
+      .map((v) => Number(v))
+      .sort((a, b) => a - b);
     activeClusterKey.value = keys.length ? String(keys[0]) : "";
     await nextTick();
     if (!keys.length) renderEmptyChart();
@@ -447,14 +800,15 @@ const loadAndRenderActiveCluster = async () => {
     renderEmptyChart();
     return;
   }
+
   clusterLoading.value = true;
+  errorMessage.value = "";
   try {
     await ensureClusterDetailsLoaded(key);
-    renderBackgroundForCluster(key);
-    updateSelectedOverlay(null);
+    await recomputeAndRenderCluster(key);
   } catch (error) {
     console.log("error", error);
-    errorMessage.value = "Failed to load full sequences for the selected cluster.";
+    errorMessage.value = "Failed to load soft-depth visualization for the selected cluster.";
   } finally {
     clusterLoading.value = false;
   }
@@ -471,9 +825,16 @@ watch(
 watch(
   () => activeClusterKey.value,
   async () => {
-    selectedSampleId.value = "";
+    selectedSampleIds.value = [];
     await nextTick();
     await loadAndRenderActiveCluster();
+  }
+);
+
+watch(
+  () => [onlyMisclassified.value, activeClusterKey.value, activeClusterSamples.value.length],
+  async () => {
+    await syncTableSelection();
   }
 );
 
@@ -507,6 +868,8 @@ onBeforeUnmount(() => {
       gap: 12px;
       font-size: 13px;
       color: #555;
+      flex-wrap: wrap;
+      justify-content: flex-end;
     }
   }
 
@@ -537,13 +900,13 @@ onBeforeUnmount(() => {
   .cluster-chart {
     flex: 1;
     min-width: 0;
-    height: 360px;
+    height: 520px;
     border: 1px solid #ececec;
     border-radius: 6px;
   }
 
   .sample-list {
-    width: 280px;
+    width: 310px;
     border: 1px solid #ececec;
     border-radius: 6px;
     padding: 8px;

@@ -27,6 +27,15 @@
         </div>
       </div>
     </div>
+    <el-alert
+      v-if="errorMessage"
+      :title="errorMessage"
+      type="warning"
+      show-icon
+      :closable="false"
+      class="error-alert"
+    />
+    <div class="status-line" v-if="isLoading">Refreshing low-margin samples...</div>
 
     <div ref="chartRef" style="width: calc(100% - 40px); height: 280px"></div>
   </div>
@@ -34,7 +43,7 @@
 <script setup>
 import axios from "@/scripts/axios.js";
 import * as echarts from "echarts";
-import { onMounted, ref, defineProps, computed, nextTick } from "vue";
+import { ref, defineProps, watch, nextTick, onBeforeUnmount } from "vue";
 const props = defineProps({
   datasetName: {
     type: String,
@@ -53,24 +62,55 @@ const total = ref();
 const samples = ref([]);
 const selectedSampleId = ref(null);
 const chartRef = ref();
-const datasetName = props.datasetName;
-const threshold = props.threshold;
-const offset = props.offset;
-const limit = props.limit;
+const isLoading = ref(false);
+const errorMessage = ref("");
+let fetchToken = 0;
+let debounceTimer = null;
 const getLowMarginSamples = async () => {
-  const url = "v1/part-a/datasets/" + datasetName + "/samples/low-margin";
+  if (!props.datasetName) {
+    total.value = 0;
+    samples.value = [];
+    selectedSampleId.value = null;
+    return;
+  }
+  const currentToken = ++fetchToken;
+  const url =
+    "v1/part-a/datasets/" + props.datasetName + "/samples/low-margin";
+  isLoading.value = true;
+  errorMessage.value = "";
   try {
     let response = await axios({
       method: "get",
       url,
+      params: {
+        threshold: props.threshold,
+        offset: props.offset,
+        limit: props.limit,
+      },
     });
+    if (currentToken !== fetchToken) return;
     total.value = response.data.total;
     samples.value = response.data.items;
+    const nextSelectedId =
+      samples.value.find((item) => item.sample_id === selectedSampleId.value)
+        ?.sample_id ?? samples.value[0]?.sample_id ?? null;
+    selectedSampleId.value = nextSelectedId;
+    if (nextSelectedId !== null) {
+      await nextTick();
+      drawSample();
+    }
   } catch (error) {
+    if (currentToken !== fetchToken) return;
     console.log("error", error);
+    errorMessage.value = "Failed to refresh low-margin samples.";
+  } finally {
+    if (currentToken === fetchToken) {
+      isLoading.value = false;
+    }
   }
 };
 const drawSample = () => {
+  if (!chartRef.value) return;
   const chart = echarts.init(chartRef.value);
   const sample = samples.value.find(
     (s) => s.sample_id === selectedSampleId.value
@@ -120,14 +160,35 @@ const drawSample = () => {
 
   chart.setOption(option);
 };
-onMounted(() => {
-  getLowMarginSamples();
+watch(
+  () => [props.datasetName, props.threshold, props.offset, props.limit],
+  () => {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    selectedSampleId.value = null;
+    debounceTimer = setTimeout(() => {
+      getLowMarginSamples();
+    }, 250);
+  },
+  { immediate: true }
+);
+
+onBeforeUnmount(() => {
+  if (debounceTimer) clearTimeout(debounceTimer);
+  fetchToken += 1;
 });
 </script>
 
 <style lang="scss" scoped>
 .margin-content {
   flex: 1;
+  .error-alert {
+    margin-top: 8px;
+  }
+  .status-line {
+    margin-top: 8px;
+    font-size: 13px;
+    color: #666;
+  }
   .info-line {
     display: flex;
     justify-content: space-between;

@@ -206,6 +206,35 @@ const getClusters = async () => {
     console.log("error", error);
   }
 };
+const buildRangePolygonSeries = (name, xValues, lowerBand, upperBand, fillColor) => ({
+  name,
+  type: "custom",
+  data: [0],
+  silent: true,
+  tooltip: { show: false },
+  renderItem: (params, api) => {
+    const points = [];
+    for (let i = 0; i < xValues.length; i += 1) {
+      points.push(api.coord([xValues[i], upperBand[i]]));
+    }
+    for (let i = xValues.length - 1; i >= 0; i -= 1) {
+      points.push(api.coord([xValues[i], lowerBand[i]]));
+    }
+    return {
+      type: "polygon",
+      shape: { points },
+      style: api.style({
+        fill: fillColor,
+        stroke: "none",
+      }),
+    };
+  },
+});
+const axisPointValue = (param) => {
+  if (Array.isArray(param?.data) && typeof param.data[1] === "number") return param.data[1];
+  if (Array.isArray(param?.value) && typeof param.value[1] === "number") return param.value[1];
+  return null;
+};
 const drawDetailCluster = () => {
   if (!chosenCluster.value) return;
 
@@ -219,19 +248,10 @@ const drawDetailCluster = () => {
   const q25 = cluster.q25_sequence.map((d) => d[0]);
   const q75 = cluster.q75_sequence.map((d) => d[0]);
 
-  const shadowData = q75.concat(q25.slice().reverse()).map((y, i) => [i, y]);
-
   const baseColor = cmaps[0];
 
   const series = [
-    {
-      name: "Range",
-      type: "line",
-      data: shadowData,
-      lineStyle: { opacity: 0 },
-      areaStyle: { color: baseColor + "22" },
-      showSymbol: false,
-    },
+    buildRangePolygonSeries("Range", x, q25, q75, baseColor + "22"),
     {
       name: "Median",
       type: "line",
@@ -263,7 +283,10 @@ const drawDetailCluster = () => {
       trigger: "axis",
       formatter: function (params) {
         return params
-          .map((p) => `${p.seriesName}: ${p.data[1].toFixed(3)}`)
+          .map((p) => {
+            const y = axisPointValue(p);
+            return typeof y === "number" ? `${p.seriesName}: ${y.toFixed(3)}` : `${p.seriesName}`;
+          })
           .join("<br/>");
       },
     },
@@ -299,17 +322,14 @@ const drawClusters = () => {
     const q25 = cluster.q25_sequence.map((d) => d[0]);
     const q75 = cluster.q75_sequence.map((d) => d[0]);
 
-    const shadowData = q75.concat(q25.slice().reverse()).map((y, i) => [i, y]);
-
     return [
-      {
-        name: `Cluster ${cluster.cluster_id} range`,
-        type: "line",
-        data: shadowData,
-        lineStyle: { opacity: 0 },
-        areaStyle: { color: cmaps[cluster.cluster_id % cmaps.length] + "33" },
-        showSymbol: false,
-      },
+      buildRangePolygonSeries(
+        `Cluster ${cluster.cluster_id} range`,
+        x,
+        q25,
+        q75,
+        cmaps[cluster.cluster_id % cmaps.length] + "33"
+      ),
 
       {
         name: `Cluster ${cluster.cluster_id} median`,
@@ -344,7 +364,8 @@ const drawClusters = () => {
         console.log(params);
         return params
           .map((p) => {
-            return `${p.seriesName}: ${p.data[1].toFixed(3)}`;
+            const y = axisPointValue(p);
+            return typeof y === "number" ? `${p.seriesName}: ${y.toFixed(3)}` : `${p.seriesName}`;
           })
           .join("<br/>");
       },
