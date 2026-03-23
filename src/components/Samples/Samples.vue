@@ -538,7 +538,7 @@ const renderSoftDepthPanels = (clusterKey) => {
           type: "polygon",
           shape: { points },
           style: api.style({
-            fill: "rgba(249, 115, 22, 0.36)",
+            fill: "rgba(249, 115, 22, 0.24)",
             stroke: "none",
           }),
         };
@@ -554,7 +554,7 @@ const renderSoftDepthPanels = (clusterKey) => {
       showSymbol: false,
       lineStyle: {
         width: 2,
-        color: "#f97316",
+        color: "#f59e0b",
         opacity: 0.95,
       },
       z: 4,
@@ -569,7 +569,7 @@ const renderSoftDepthPanels = (clusterKey) => {
       showSymbol: false,
       lineStyle: {
         width: 2,
-        color: "#f97316",
+        color: "#f59e0b",
         opacity: 0.95,
       },
       z: 4,
@@ -604,7 +604,7 @@ const renderSoftDepthPanels = (clusterKey) => {
     },
   );
 
-  const selectedPalette = ["#ef4444", "#dc2626", "#b91c1c", "#f43f5e", "#e11d48", "#f97316"];
+  const selectedPalette = ["#2563eb", "#1d4ed8", "#0ea5e9", "#0284c7", "#0891b2", "#3b82f6"];
   const selectedSeries = sampleIds
     .map((sampleId, idx) => ({ sampleId, idx }))
     .filter((item) => selectedSet.has(item.sampleId))
@@ -632,7 +632,7 @@ const renderSoftDepthPanels = (clusterKey) => {
         text: `(Soft-Depth Panel) Mean + Central Band + Selected + Top-${topKValue} Outer Curves`,
         left: 30,
         top: 6,
-        textStyle: { fontSize: 12, fontWeight: 600, color: "#374151" },
+        textStyle: { fontSize: 12, fontWeight: 600, color: "#1f2937" },
       },
       grid: { left: 50, right: 30, top: 38, bottom: 40 },
       xAxis: [
@@ -901,7 +901,7 @@ onBeforeUnmount(() => {
       align-items: center;
       gap: 12px;
       font-size: 13px;
-      color: #555;
+      color: #4b5563;
       flex-wrap: wrap;
       justify-content: flex-end;
     }
@@ -921,7 +921,7 @@ onBeforeUnmount(() => {
   .cluster-loading {
     margin-bottom: 8px;
     font-size: 13px;
-    color: #666;
+    color: #6b7280;
   }
 
   .content-line {
@@ -935,13 +935,13 @@ onBeforeUnmount(() => {
     flex: 1;
     min-width: 0;
     height: 520px;
-    border: 1px solid #ececec;
+    border: 1px solid #eaecef;
     border-radius: 6px;
   }
 
   .sample-list {
     width: 310px;
-    border: 1px solid #ececec;
+    border: 1px solid #eaecef;
     border-radius: 6px;
     padding: 8px;
     .list-title {
@@ -974,13 +974,13 @@ onBeforeUnmount(() => {
     gap: 16px;
     flex-wrap: wrap;
     font-size: 13px;
-    color: #444;
+    color: #374151;
   }
 
   .empty-state {
     margin-top: 10px;
     font-size: 13px;
-    color: #888;
+    color: #9ca3af;
   }
 }
 </style>
