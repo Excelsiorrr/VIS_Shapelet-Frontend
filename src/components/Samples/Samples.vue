@@ -58,6 +58,17 @@
               active-text="pred!=true"
               inactive-text="all"
             />
+            <div class="topk-control">
+              <span>TopK</span>
+              <el-input-number
+                v-model="outerTopK"
+                :min="1"
+                :max="200"
+                :step="1"
+                size="small"
+                controls-position="right"
+              />
+            </div>
             <span class="selected-count">Selected: {{ selectedSampleIds.length }}</span>
           </div>
           <el-table
@@ -136,7 +147,9 @@ let summaryLoadToken = 0;
 
 const CENTRAL_RATIO = 0.5;
 const BAND_MODE = "quantile";
-const OUTER_CURVE_TOP_K = 200;
+const OUTER_CURVE_TOP_K_MAX = 200;
+const outerTopK = ref(80);
+let topKRenderDebounceTimer = null;
 
 const classLabels = computed(() => {
   const labels = Object.keys(props.classDistribution || {}).map((v) => Number(v));
@@ -415,7 +428,7 @@ const buildDepthState = (clusterKey) => {
 
   const centralSet = new Set(centralIdx);
   const outerIndices = Array.from({ length: X.length }, (_, i) => i).filter((idx) => !centralSet.has(idx));
-  const outerTopK = outerIndices.sort((a, b) => depth[a] - depth[b]).slice(0, OUTER_CURVE_TOP_K);
+  const outerSortedIndices = outerIndices.sort((a, b) => depth[a] - depth[b]);
 
   const baseSamples = clusterMap.value[clusterKey]?.samples || [];
   const sampleById = {};
@@ -453,7 +466,7 @@ const buildDepthState = (clusterKey) => {
     centralIdx,
     lowerBand,
     upperBand,
-    outerTopK,
+    outerSortedIndices,
     minDepth: Math.min(...depth),
     maxDepth: Math.max(...depth),
     depthBySampleId,
@@ -476,7 +489,7 @@ const renderSoftDepthPanels = (clusterKey) => {
     X,
     T,
     meanCurve,
-    outerTopK,
+    outerSortedIndices,
     lowerBand,
     upperBand,
   } = state;
@@ -484,7 +497,9 @@ const renderSoftDepthPanels = (clusterKey) => {
   const xAxisData = Array.from({ length: T }, (_, i) => i);
   const selectedSet = new Set(selectedSampleIds.value.map((id) => String(id)));
 
-  const panelSeries = outerTopK.map((idx) => ({
+  const topKValue = Math.max(1, Math.min(OUTER_CURVE_TOP_K_MAX, Number(outerTopK.value) || 1));
+  const outerTopKIndices = outerSortedIndices.slice(0, topKValue);
+  const panelSeries = outerTopKIndices.map((idx) => ({
     id: `sample-${sampleIds[idx]}`,
     name: `Outer Sample ${sampleIds[idx]}`,
     type: "line",
@@ -614,7 +629,7 @@ const renderSoftDepthPanels = (clusterKey) => {
     {
       animation: false,
       title: {
-        text: `(Soft-Depth Panel) Mean + Central Band + Selected + Top-${OUTER_CURVE_TOP_K} Outer Curves`,
+        text: `(Soft-Depth Panel) Mean + Central Band + Selected + Top-${topKValue} Outer Curves`,
         left: 30,
         top: 6,
         textStyle: { fontSize: 12, fontWeight: 600, color: "#374151" },
@@ -838,7 +853,26 @@ watch(
   }
 );
 
+watch(
+  () => outerTopK.value,
+  () => {
+    const normalized = Math.max(1, Math.min(OUTER_CURVE_TOP_K_MAX, Number(outerTopK.value) || 1));
+    if (normalized !== outerTopK.value) {
+      outerTopK.value = normalized;
+      return;
+    }
+    if (topKRenderDebounceTimer) clearTimeout(topKRenderDebounceTimer);
+    topKRenderDebounceTimer = setTimeout(() => {
+      const key = Number(activeClusterKey.value);
+      if (!Number.isNaN(key) && clusterDepthCache.value[key]) {
+        renderSoftDepthPanels(key);
+      }
+    }, 250);
+  }
+);
+
 onBeforeUnmount(() => {
+  if (topKRenderDebounceTimer) clearTimeout(topKRenderDebounceTimer);
   if (chartInstance) {
     chartInstance.dispose();
     chartInstance = null;
@@ -914,6 +948,23 @@ onBeforeUnmount(() => {
       font-size: 13px;
       font-weight: 600;
       margin-bottom: 6px;
+    }
+    .list-tools {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+      .topk-control {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+      }
+      .selected-count {
+        font-size: 12px;
+        color: #6b7280;
+      }
     }
   }
 
