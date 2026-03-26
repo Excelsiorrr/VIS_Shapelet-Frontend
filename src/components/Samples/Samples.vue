@@ -5,6 +5,7 @@
       <div class="meta">
         <span>Total Samples: {{ allSummaries.length }}</span>
         <span v-if="activeClusterKey">Loaded In Cluster: {{ activeClusterLoadedCount }}</span>
+        <span>Low-Margin Pool: {{ lowMarginSamples.length }}</span>
         <span v-if="activeClusterDepthSummary">
           Soft Depth Range: {{ toFixedSafe(activeClusterDepthSummary.minDepth) }} ~
           {{ toFixedSafe(activeClusterDepthSummary.maxDepth) }}
@@ -24,6 +25,14 @@
     <el-alert
       v-if="errorMessage"
       :title="errorMessage"
+      type="warning"
+      show-icon
+      :closable="false"
+      class="error-alert"
+    />
+    <el-alert
+      v-if="lowMarginError"
+      :title="lowMarginError"
       type="warning"
       show-icon
       :closable="false"
@@ -58,6 +67,20 @@
               active-text="pred!=true"
               inactive-text="all"
             />
+            <el-switch
+              v-model="onlyLowMargin"
+              inline-prompt
+              active-text="low margin"
+              inactive-text="all margin"
+            />
+            <el-button
+              size="small"
+              plain
+              :disabled="lowMarginLoading || !activeClusterLowMarginSamples.length"
+              @click="selectLowMarginInCluster"
+            >
+              Select Low-Margin
+            </el-button>
             <div class="topk-control">
               <span>TopK</span>
               <el-input-number
@@ -69,6 +92,7 @@
                 controls-position="right"
               />
             </div>
+            <span class="low-margin-count">In Cluster Low-Margin: {{ activeClusterLowMarginSamples.length }}</span>
             <span class="selected-count">Selected: {{ selectedSampleIds.length }}</span>
           </div>
           <el-table
@@ -83,6 +107,12 @@
           >
             <el-table-column type="selection" width="45" />
             <el-table-column prop="sample_id" label="Sample" min-width="90" />
+            <el-table-column label="LowM" width="72">
+              <template #default="{ row }">
+                <el-tag v-if="lowMarginIdSet.has(String(row.sample_id))" size="small" type="warning">yes</el-tag>
+                <span v-else class="muted-cell">-</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="label" label="True" width="60" />
             <el-table-column label="Pred" width="60">
               <template #default="{ row }">
@@ -127,6 +157,18 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
+  threshold: {
+    type: Number,
+    default: 0.1,
+  },
+  offset: {
+    type: Number,
+    default: 0,
+  },
+  limit: {
+    type: Number,
+    default: 50,
+  },
 });
 
 const summaryLoading = ref(false);
@@ -139,6 +181,10 @@ const clusterDepthCache = ref({});
 const activeClusterKey = ref("");
 const selectedSampleIds = ref([]);
 const onlyMisclassified = ref(false);
+const onlyLowMargin = ref(false);
+const lowMarginLoading = ref(false);
+const lowMarginError = ref("");
+const lowMarginSamples = ref([]);
 
 const chartRef = ref(null);
 const sampleTableRef = ref(null);
@@ -203,8 +249,11 @@ const isMisclassified = (sample) => {
 };
 
 const displayClusterSamples = computed(() => {
-  if (!onlyMisclassified.value) return activeClusterSamples.value;
-  return activeClusterSamples.value.filter((sample) => isMisclassified(sample));
+  return activeClusterSamples.value.filter((sample) => {
+    if (onlyMisclassified.value && !isMisclassified(sample)) return false;
+    if (onlyLowMargin.value && !lowMarginIdSet.value.has(String(sample.sample_id))) return false;
+    return true;
+  });
 });
 
 const selectedSamples = computed(() => {
@@ -219,6 +268,14 @@ const activeClusterLoadedCount = computed(() => {
   const cache = clusterDetailCache.value[key];
   if (!cache?.detailsById) return 0;
   return Object.keys(cache.detailsById).length;
+});
+
+const lowMarginIdSet = computed(() => {
+  return new Set((lowMarginSamples.value || []).map((item) => String(item.sample_id)));
+});
+
+const activeClusterLowMarginSamples = computed(() => {
+  return activeClusterSamples.value.filter((sample) => lowMarginIdSet.value.has(String(sample.sample_id)));
 });
 
 const toFixedSafe = (num) => {
@@ -253,6 +310,34 @@ const getSampleDetail = async (sampleId) => {
     params: { split: "test" },
   });
   return response.data;
+};
+
+const getLowMarginSamples = async () => {
+  if (!props.datasetName) {
+    lowMarginSamples.value = [];
+    lowMarginError.value = "";
+    return;
+  }
+  lowMarginLoading.value = true;
+  lowMarginError.value = "";
+  try {
+    const response = await axios({
+      method: "get",
+      url: `v1/part-a/datasets/${props.datasetName}/samples/low-margin`,
+      params: {
+        threshold: props.threshold,
+        offset: props.offset,
+        limit: props.limit,
+      },
+    });
+    lowMarginSamples.value = Array.isArray(response.data?.items) ? response.data.items : [];
+  } catch (error) {
+    console.log("error", error);
+    lowMarginSamples.value = [];
+    lowMarginError.value = "Failed to load low-margin samples.";
+  } finally {
+    lowMarginLoading.value = false;
+  }
 };
 
 const mapWithConcurrency = async (arr, concurrency, mapper) => {
@@ -762,6 +847,16 @@ const onTableRowClick = async (row) => {
   await toggleSampleSelection(row.sample_id);
 };
 
+const selectLowMarginInCluster = async () => {
+  const ids = activeClusterLowMarginSamples.value.map((sample) => sample.sample_id);
+  selectedSampleIds.value = normalizeSelectedIds(ids);
+  await syncTableSelection();
+  const key = Number(activeClusterKey.value);
+  if (!Number.isNaN(key) && clusterDepthCache.value[key]) {
+    renderSoftDepthPanels(key);
+  }
+};
+
 const loadAllSummaries = async () => {
   if (!props.datasetName || !classLabels.value.length) {
     allSummaries.value = [];
@@ -838,6 +933,14 @@ watch(
 );
 
 watch(
+  () => [props.datasetName, props.threshold, props.offset, props.limit],
+  () => {
+    getLowMarginSamples();
+  },
+  { immediate: true }
+);
+
+watch(
   () => activeClusterKey.value,
   async () => {
     selectedSampleIds.value = [];
@@ -848,6 +951,13 @@ watch(
 
 watch(
   () => [onlyMisclassified.value, activeClusterKey.value, activeClusterSamples.value.length],
+  async () => {
+    await syncTableSelection();
+  }
+);
+
+watch(
+  () => onlyLowMargin.value,
   async () => {
     await syncTableSelection();
   }
@@ -940,7 +1050,7 @@ onBeforeUnmount(() => {
   }
 
   .sample-list {
-    width: 310px;
+    width: 380px;
     border: 1px solid #eaecef;
     border-radius: 6px;
     padding: 8px;
@@ -952,7 +1062,8 @@ onBeforeUnmount(() => {
     .list-tools {
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: flex-start;
+      flex-wrap: wrap;
       gap: 8px;
       margin-bottom: 8px;
       .topk-control {
@@ -961,11 +1072,17 @@ onBeforeUnmount(() => {
         gap: 6px;
         font-size: 12px;
       }
+      .low-margin-count,
       .selected-count {
         font-size: 12px;
         color: #6b7280;
       }
     }
+  }
+
+  .muted-cell {
+    color: #9ca3af;
+    font-size: 12px;
   }
 
   .detail-line {

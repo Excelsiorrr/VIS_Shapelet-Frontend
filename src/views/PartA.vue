@@ -150,9 +150,6 @@
         <samples-content
           :datasetName="datasetName"
           :classDistribution="metrics?.class_distribution || {}"
-        />
-        <margin-content
-          :datasetName="datasetName"
           :threshold="margin_threshold"
           :offset="offset"
           :limit="limit"
@@ -165,7 +162,6 @@
 <script setup>
 import axios from "@/scripts/axios.js";
 import ClusterContent from "@/components/Cluster";
-import MarginContent from "@/components/Margin";
 import SamplesContent from "@/components/Samples";
 import { onMounted, ref, nextTick, computed } from "vue";
 import { useRouter } from "vue-router";
