@@ -30,19 +30,25 @@
           :shapelet-id="selectedShapeletId"
           :omega="omega"
         />
-
-        <el-card class="placeholder-card mid-dynamic" shadow="never">
-          <div class="placeholder-title">随 Ω 变化的 Activations 直方图</div>
-          <div class="placeholder-desc">R2 将实现 BHistogramDynamicPanel</div>
-        </el-card>
-
-        <el-card class="placeholder-card bottom-stats" shadow="never">
-          <div class="placeholder-title">Dynamic Summary / Class Stats</div>
-          <div class="placeholder-desc">
-            R3 将实现 BStatsSummaryCard + BClassStatsTable
-          </div>
-        </el-card>
       </div>
+
+      <div class="evidence-panel">
+        <b-shapelet-evidence-panel
+          :dataset-name="datasetName"
+          :scope="scope"
+          :shapelet-id="selectedShapeletId"
+          :omega="omega"
+          @open-class-stats="classStatsVisible = true"
+        />
+      </div>
+
+      <b-class-stats-table
+        v-model:visible="classStatsVisible"
+        :dataset-name="datasetName"
+        :shapelet-id="selectedShapeletId"
+        :scope="scope"
+        :omega="omega"
+      />
     </div>
   </div>
 </template>
@@ -53,6 +59,8 @@ import axios from "@/scripts/axios.js";
 import BMetaBar from "@/components/PartB/BMetaBar.vue";
 import BShapeletGallery from "@/components/PartB/BShapeletGallery.vue";
 import BHistogramPanel from "@/components/PartB/BHistogramPanel.vue";
+import BShapeletEvidencePanel from "@/components/PartB/BShapeletEvidencePanel.vue";
+import BClassStatsTable from "@/components/PartB/BClassStatsTable.vue";
 
 const datasetName = ref(localStorage.getItem("shapeletDataset") || "mcce");
 
@@ -69,6 +77,7 @@ const galleryLoading = ref(false);
 const galleryError = ref("");
 const selectedShapeletId = ref("");
 const galleryLimit = 500;
+const classStatsVisible = ref(false);
 
 const fetchMeta = async () => {
   if (!datasetName.value) return;
@@ -154,12 +163,13 @@ onMounted(() => {
   height: 100%;
   display: grid;
   grid-template-columns: 29% 71%;
+  grid-template-rows: minmax(0, 54%) minmax(340px, 46%);
   gap: 12px;
 }
 
 .left-panel {
   min-width: 0;
-  height: 100%;
+  min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
@@ -167,34 +177,15 @@ onMounted(() => {
 
 .right-panel {
   min-width: 0;
-  height: 100%;
-  display: grid;
-  grid-template-rows: 48% 24% 28%;
-  gap: 10px;
+  min-height: 0;
+  display: block;
+  overflow: hidden;
 }
 
-.placeholder-card {
-  border: 1px solid #eaecef;
-  border-radius: 8px;
+.evidence-panel {
+  grid-column: 1 / span 2;
+  min-width: 0;
   min-height: 0;
-
-  :deep(.el-card__body) {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 6px;
-  }
-
-  .placeholder-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: #1f2937;
-  }
-
-  .placeholder-desc {
-    font-size: 13px;
-    color: #6b7280;
-  }
+  overflow: hidden;
 }
 </style>

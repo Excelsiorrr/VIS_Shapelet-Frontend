@@ -231,7 +231,7 @@ const getPreviewPolyline = (item, large = false) => {
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-rows: minmax(210px, 40%) minmax(0, 60%);
+    grid-template-rows: minmax(150px, 28%) minmax(0, 72%);
     gap: 10px;
   }
 
@@ -387,7 +387,7 @@ const getPreviewPolyline = (item, large = false) => {
 @media (max-width: 1280px) {
   .gallery-card {
     .gallery-content {
-      grid-template-rows: minmax(180px, 36%) minmax(0, 64%);
+      grid-template-rows: minmax(140px, 24%) minmax(0, 76%);
     }
 
     .hero-preview .hero-id {
