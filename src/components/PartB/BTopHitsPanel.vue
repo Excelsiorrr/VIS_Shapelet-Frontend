@@ -68,6 +68,26 @@ const loading = ref(false);
 const errorMessage = ref("");
 const rows = ref([]);
 
+const extractErrorMessage = (error, fallback) => {
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === "string" && detail.trim()) {
+    return detail;
+  }
+  if (detail && typeof detail.message === "string" && detail.message.trim()) {
+    return detail.message;
+  }
+  if (Array.isArray(detail) && detail.length) {
+    const first = detail[0];
+    if (typeof first === "string" && first.trim()) return first;
+    if (first && typeof first.msg === "string" && first.msg.trim()) return first.msg;
+    if (first && typeof first.message === "string" && first.message.trim()) return first.message;
+  }
+  if (typeof error?.message === "string" && error.message.trim()) {
+    return error.message;
+  }
+  return fallback;
+};
+
 const fetchTopHits = async () => {
   if (!props.visible || !props.datasetName || !props.shapeletId || props.classId === null || props.classId === undefined) {
     rows.value = [];
@@ -92,7 +112,7 @@ const fetchTopHits = async () => {
   } catch (error) {
     console.log("error", error);
     rows.value = [];
-    errorMessage.value = "Failed to load top hit samples.";
+    errorMessage.value = extractErrorMessage(error, "Failed to load top hit samples.");
   } finally {
     loading.value = false;
   }

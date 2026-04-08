@@ -14,6 +14,14 @@
         >
           View Class Stats
         </el-button>
+        <el-button
+          v-if="shapeletId && activeItem"
+          size="small"
+          class="part-e-trigger"
+          @click="openPartE"
+        >
+          Open Part E
+        </el-button>
         <div class="reference" v-if="shapeletId">
           <span>{{ shapeletId }}</span>
           <span v-if="shapeletLength">len {{ shapeletLength }}</span>
@@ -71,11 +79,12 @@
                 <div class="match-window">true {{ nullableValue(item.label) }} · pred {{ nullableValue(item.pred_class) }} · margin {{ nullableNumber(item.margin, 3) }}</div>
               </div>
               <div class="match-preview">
-                <svg viewBox="0 0 100 32" preserveAspectRatio="none" class="match-preview-svg">
+                <svg viewBox="0 0 100 44" preserveAspectRatio="none" class="match-preview-svg">
+                  <line x1="0" y1="22" x2="100" y2="22" class="mini-divider" />
                   <rect x="0" y="0" width="100" height="16" class="mini-lane raw-mini-lane" />
-                  <rect x="0" y="16" width="100" height="16" class="mini-lane act-mini-lane" />
-                  <polyline :points="buildMiniRaw(item)" class="mini-raw" />
-                  <polyline :points="buildMiniAct(item)" class="mini-act" />
+                  <rect x="0" y="22" width="100" height="22" class="mini-lane act-mini-lane" />
+                  <polyline :points="buildMiniRawDetail(item)" class="mini-raw" />
+                  <polyline :points="buildMiniActDetail(item)" class="mini-act" />
                 </svg>
               </div>
               <div class="match-right">
@@ -88,154 +97,18 @@
       </div>
 
       <div class="detail-pane" v-if="activeItem">
-        <div class="detail-head">
-          <div>
-            <div class="detail-title">Selected Match Evidence</div>
-            <div class="detail-subtitle">
-              sample {{ activeItem.sample_id }} · peak_t {{ activeItem.peak_t }} · window {{ activeItem.t_start }} - {{ activeItem.t_end }}
-            </div>
-          </div>
-          <div class="detail-stats">
-            <span>peak {{ formatNumber(activeItem.peak_activation, 3) }}</span>
-            <span>label {{ nullableValue(activeItem.label) }}</span>
-            <span>pred {{ nullableValue(activeItem.pred_class) }}</span>
-            <span>margin {{ nullableNumber(activeItem.margin, 3) }}</span>
-          </div>
-        </div>
-
         <div class="overlay-card">
-          <div class="overlay-layout">
-            <div class="overlay-main">
-              <div class="overlay-legend">
-                <span class="legend-chip raw-chip">raw window</span>
-                <span class="legend-chip act-chip">activation window</span>
-                <span class="legend-chip peak-chip">peak neighborhood</span>
-              </div>
-              <div class="evidence-focus">
-                <div class="focus-row">
-                  <div class="focus-label">
-                    <div class="focus-title">Raw window</div>
-                    <div class="focus-subtitle">local signal shape in the matched window</div>
-                  </div>
-                  <div class="focus-chart">
-                    <svg viewBox="0 0 100 74" preserveAspectRatio="none" class="focus-svg">
-                      <rect x="0" y="6" width="100" height="62" class="lane-bg raw-lane-bg" />
-                      <rect
-                        :x="peakBand.x.toFixed(2)"
-                        y="6"
-                        :width="peakBand.width.toFixed(2)"
-                        height="62"
-                        class="peak-band"
-                      />
-                      <line x1="0" y1="37" x2="100" y2="37" class="baseline raw-base" />
-                      <polyline :points="rawPolyline" class="raw-line" />
-                      <line
-                        :x1="peakMarkerX.toFixed(2)"
-                        y1="8"
-                        :x2="peakMarkerX.toFixed(2)"
-                        y2="66"
-                        class="peak-marker"
-                      />
-                    </svg>
-                  </div>
-                </div>
-
-                <div class="focus-row">
-                  <div class="focus-label">
-                    <div class="focus-title">Activation window</div>
-                    <div class="focus-subtitle">shapelet response strength in the same window</div>
-                  </div>
-                  <div class="focus-chart">
-                    <svg viewBox="0 0 100 74" preserveAspectRatio="none" class="focus-svg">
-                      <rect x="0" y="6" width="100" height="62" class="lane-bg act-lane-bg" />
-                      <rect
-                        :x="peakBand.x.toFixed(2)"
-                        y="6"
-                        :width="peakBand.width.toFixed(2)"
-                        height="62"
-                        class="peak-band"
-                      />
-                      <line x1="0" y1="58" x2="100" y2="58" class="baseline act-base" />
-                      <polyline :points="activationPolyline" class="activation-line" />
-                      <line
-                        :x1="peakMarkerX.toFixed(2)"
-                        y1="8"
-                        :x2="peakMarkerX.toFixed(2)"
-                        y2="66"
-                        class="peak-marker"
-                      />
-                    </svg>
-                  </div>
-                </div>
-
-                <div class="focus-timeline">
-                  <span>start {{ activeItem.t_start }}</span>
-                  <span class="focus-peak">peak_t {{ activeItem.peak_t }}</span>
-                  <span>end {{ activeItem.t_end }}</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="overlay-side">
-              <div class="overlay-note">
-                darkest point in amber band = strongest match around <span>peak_t {{ activeItem.peak_t }}</span>
-              </div>
-              <div class="overlay-summary">
-                <div class="summary-chip">
-                  <span class="summary-label">sample</span>
-                  <span class="summary-value">{{ activeItem.sample_id }}</span>
-                </div>
-                <div class="summary-chip">
-                  <span class="summary-label">window</span>
-                  <span class="summary-value">{{ activeItem.t_start }}-{{ activeItem.t_end }}</span>
-                </div>
-                <div class="summary-chip">
-                  <span class="summary-label">peak</span>
-                  <span class="summary-value">{{ formatNumber(activeItem.peak_activation, 3) }}</span>
-                </div>
-                <div class="summary-chip">
-                  <span class="summary-label">pred</span>
-                  <span class="summary-value">{{ nullableValue(activeItem.pred_class) }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
+          <el-skeleton v-if="sequenceLoading" :rows="8" animated />
+          <c-sequence-evidence-panel
+            v-else
+            class="embedded-sequence-panel"
+            :sequence="sequenceData"
+            :active-window="sequenceWindow"
+            :prototype="pinnedPrototype"
+            :pinned-shapelet-id="shapeletId"
+          />
         </div>
 
-        <div class="comparison-grid">
-          <div class="grid-head">
-            <div class="grid-title">Quick Comparison</div>
-            <div class="grid-meta">top 4 evidence cards</div>
-          </div>
-          <div class="grid-cards">
-            <div
-              v-for="item in comparisonItems"
-              :key="`mini-${item.sample_id}-${item.rank}`"
-              class="mini-card"
-              :class="{ active: selectedKey === `${item.sample_id}-${item.rank}` }"
-              @click="selectItem(item)"
-            >
-              <div class="mini-head">
-                <span>#{{ item.rank }} · {{ item.sample_id }}</span>
-                <span class="mini-peak">{{ formatNumber(item.peak_activation, 3) }}</span>
-              </div>
-              <svg viewBox="0 0 100 44" preserveAspectRatio="none" class="mini-svg">
-                <rect x="0" y="0" width="100" height="22" class="mini-lane raw-mini-lane" />
-                <rect x="0" y="22" width="100" height="22" class="mini-lane act-mini-lane" />
-                <polyline :points="buildMiniRaw(item)" class="mini-raw" />
-                <polyline :points="buildMiniAct(item)" class="mini-act" />
-              </svg>
-              <div class="mini-meta">window {{ item.t_start }} - {{ item.t_end }}</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="link-preview">
-          <div class="link-title">Part C Payload Preview</div>
-          <div class="link-code">
-            sample_id={{ activeItem.sample_id }} · shapelet_id={{ shapeletId }} · scope={{ scope }} · omega={{ formatNumber(omega, 3) }}
-          </div>
-        </div>
       </div>
     </div>
 
@@ -244,9 +117,12 @@
 
 <script setup>
 import { computed, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import axios from "@/scripts/axios.js";
+import CSequenceEvidencePanel from "@/components/PartC/CSequenceEvidencePanel.vue";
 
 const emit = defineEmits(["open-class-stats"]);
+const router = useRouter();
 
 const props = defineProps({
   datasetName: {
@@ -277,13 +153,16 @@ const items = ref([]);
 const warnings = ref([]);
 const shapeletLength = ref(0);
 const selectedKey = ref("");
+const sequenceLoading = ref(false);
+const sequenceData = ref([]);
+const sequenceWindow = ref(null);
+const pinnedPrototype = ref(null);
 const activeItem = computed(() => {
   if (!items.value.length) return null;
   const selected = items.value.find((item) => `${item.sample_id}-${item.rank}` === selectedKey.value);
   return selected || items.value[0] || null;
 });
 
-const comparisonItems = computed(() => items.value.slice(0, 4));
 const nullableValue = (value) => {
   return value === null || value === undefined ? "-" : String(value);
 };
@@ -333,36 +212,97 @@ const buildPolyline = (series, x0, x1, yTop, yBottom) => {
     .join(" ");
 };
 
-const rawSeries = computed(() => normalizeSeries(activeItem.value?.raw_window));
-const activationSeries = computed(() => normalizeSeries(activeItem.value?.activation_window));
-
-const rawPolyline = computed(() => buildPolyline(rawSeries.value, 3, 97, 10, 60));
-const activationPolyline = computed(() => buildPolyline(activationSeries.value, 3, 97, 12, 58));
-
-const peakIndex = computed(() => {
-  if (!activeItem.value) return 0;
-  const value = Number(activeItem.value.peak_t) - Number(activeItem.value.t_start);
-  return Math.max(0, Math.min(rawSeries.value.length - 1, Number.isFinite(value) ? value : 0));
-});
-
-const peakMarkerX = computed(() => {
-  const seriesLength = Math.max(rawSeries.value.length, activationSeries.value.length, 1);
-  if (seriesLength <= 1) return 50;
-  return 3 + (94 * peakIndex.value) / (seriesLength - 1);
-});
-
-const peakBand = computed(() => {
-  const seriesLength = Math.max(rawSeries.value.length, activationSeries.value.length, 1);
-  const width = seriesLength <= 1 ? 8 : Math.max(5, 94 / seriesLength);
-  const x = Math.max(3, Math.min(97 - width, peakMarkerX.value - width / 2));
-  return { x, width };
-});
-
-const buildMiniRaw = (item) => buildPolyline(normalizeSeries(item?.raw_window), 2, 98, 8, 26);
-const buildMiniAct = (item) => buildPolyline(normalizeSeries(item?.activation_window), 2, 98, 28, 42);
+const buildMiniRawDetail = (item) => buildPolyline(normalizeSeries(item?.raw_window), 2, 98, 6, 20);
+const buildMiniActDetail = (item) => buildPolyline(normalizeSeries(item?.activation_window), 2, 98, 24, 42);
 
 const selectItem = (item) => {
   selectedKey.value = `${item.sample_id}-${item.rank}`;
+};
+
+const toFallbackWindow = () => {
+  if (!activeItem.value) return null;
+  return {
+    shapelet_id: String(props.shapeletId || ""),
+    start: Number(activeItem.value.t_start || 0),
+    end: Number(activeItem.value.t_end || 0),
+    peak_t: Number(activeItem.value.peak_t || 0),
+    triggered: true,
+  };
+};
+
+const fetchSequenceEvidence = async () => {
+  if (!props.datasetName || !props.shapeletId || !activeItem.value) {
+    sequenceData.value = [];
+    sequenceWindow.value = null;
+    pinnedPrototype.value = null;
+    return;
+  }
+
+  sequenceLoading.value = true;
+  try {
+    const [matchResponse, prototypeResponse] = await Promise.all([
+      axios({
+        method: "post",
+        url: `v1/part-c/datasets/${props.datasetName}/samples/${activeItem.value.sample_id}/matches`,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        data: {
+          scope: props.scope,
+          omega: props.omega,
+          shapelet_ids: null,
+          topk_shapelets: null,
+          pinned_shapelet_id: props.shapeletId,
+          include_sequence: true,
+          include_prediction: false,
+          include_windows: true,
+        },
+      }),
+      axios({
+        method: "get",
+        url: `v1/part-b/datasets/${props.datasetName}/shapelets/${props.shapeletId}`,
+      }),
+    ]);
+
+    const matchData = matchResponse?.data || {};
+    sequenceData.value = Array.isArray(matchData.sequence) ? matchData.sequence : [];
+    const windows = Array.isArray(matchData.windows) ? matchData.windows : [];
+    sequenceWindow.value =
+      windows.find((item) => String(item?.shapelet_id || "") === String(props.shapeletId || "")) || toFallbackWindow();
+
+    const prototype = prototypeResponse?.data?.shapelet?.prototype;
+    pinnedPrototype.value = Array.isArray(prototype) ? prototype : null;
+
+    if (!sequenceData.value.length && Array.isArray(activeItem.value.raw_window)) {
+      sequenceData.value = activeItem.value.raw_window;
+      sequenceWindow.value = {
+        shapelet_id: String(props.shapeletId || ""),
+        start: 0,
+        end: Math.max(0, sequenceData.value.length - 1),
+        peak_t: Math.max(
+          0,
+          Math.min(sequenceData.value.length - 1, Number(activeItem.value.peak_t || 0) - Number(activeItem.value.t_start || 0))
+        ),
+        triggered: true,
+      };
+    }
+  } catch (error) {
+    console.log("error", error);
+    sequenceData.value = Array.isArray(activeItem.value?.raw_window) ? activeItem.value.raw_window : [];
+    sequenceWindow.value = {
+      shapelet_id: String(props.shapeletId || ""),
+      start: 0,
+      end: Math.max(0, sequenceData.value.length - 1),
+      peak_t: Math.max(
+        0,
+        Math.min(sequenceData.value.length - 1, Number(activeItem.value?.peak_t || 0) - Number(activeItem.value?.t_start || 0))
+      ),
+      triggered: true,
+    };
+    pinnedPrototype.value = null;
+  } finally {
+    sequenceLoading.value = false;
+  }
 };
 
 const fetchEvidence = async () => {
@@ -403,10 +343,38 @@ const fetchEvidence = async () => {
   }
 };
 
+const openPartE = () => {
+  if (!activeItem.value || !props.datasetName || !props.shapeletId) return;
+  router.push({
+    name: "WhatIfPanel",
+    query: {
+      dataset: props.datasetName,
+      sample_id: String(activeItem.value.sample_id),
+      shapelet_id: String(props.shapeletId),
+      t_start: String(activeItem.value.t_start),
+      t_end: String(activeItem.value.t_end),
+      scope: props.scope,
+      omega: String(props.omega),
+      source_panel: "part_b",
+      rank: String(activeItem.value.rank ?? ""),
+      trigger_score: String(activeItem.value.peak_activation ?? ""),
+      rank_metric: "peak_activation",
+    },
+  });
+};
+
 watch(
   () => [props.datasetName, props.scope, props.shapeletId, props.limit],
   () => {
     fetchEvidence();
+  },
+  { immediate: true }
+);
+
+watch(
+  () => [props.datasetName, props.scope, props.omega, props.shapeletId, selectedKey.value],
+  () => {
+    fetchSequenceEvidence();
   },
   { immediate: true }
 );
@@ -453,6 +421,14 @@ watch(
   --el-button-text-color: #1d4ed8;
   --el-button-hover-bg-color: #dbeafe;
   --el-button-hover-border-color: #93c5fd;
+}
+
+.part-e-trigger {
+  --el-button-bg-color: #fff7ed;
+  --el-button-border-color: #fed7aa;
+  --el-button-text-color: #c2410c;
+  --el-button-hover-bg-color: #ffedd5;
+  --el-button-hover-border-color: #fdba74;
 }
 
 .title {
@@ -572,9 +548,14 @@ watch(
 
 .match-preview-svg {
   width: 100%;
-  height: 38px;
+  height: 46px;
   border-radius: 6px;
   background: linear-gradient(180deg, #fbfcff 0%, #fbfcff 50%, #fffaf2 50%, #fffaf2 100%);
+}
+
+.mini-divider {
+  stroke: #e2e8f0;
+  stroke-width: 0.8;
 }
 
 .match-right {
@@ -624,10 +605,11 @@ watch(
 }
 
 .detail-pane {
-  display: grid;
-  grid-template-rows: auto minmax(220px, 1.2fr) minmax(132px, 0.8fr) auto;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
-  overflow: hidden;
+  overflow: auto;
+  min-height: 0;
 }
 
 .detail-head {
@@ -635,6 +617,9 @@ watch(
   justify-content: space-between;
   gap: 10px;
   align-items: flex-start;
+  width: 100%;
+  max-width: 1240px;
+  align-self: center;
 }
 
 .detail-title {
@@ -657,9 +642,7 @@ watch(
   color: #475569;
 }
 
-.overlay-card,
-.link-preview,
-.comparison-grid {
+.overlay-card {
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   background: #ffffff;
@@ -667,23 +650,17 @@ watch(
 
 .overlay-card {
   padding: 10px;
+  width: 100%;
+  max-width: 1240px;
+  align-self: flex-start;
+  overflow: hidden;
 }
 
-.overlay-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 240px;
-  gap: 12px;
-  align-items: start;
-}
-
-.overlay-main {
-  min-width: 0;
-}
-
-.overlay-side {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.embedded-sequence-panel {
+  border: none;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #ffffff;
 }
 
 .overlay-legend {
@@ -781,23 +758,26 @@ watch(
 .raw-line {
   fill: none;
   stroke: #111827;
-  stroke-width: 2.8;
+  stroke-width: 1.6;
   stroke-linecap: round;
   stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
 }
 
 .activation-line {
   fill: none;
   stroke: #f59e0b;
-  stroke-width: 2.8;
+  stroke-width: 1.6;
   stroke-linecap: round;
   stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
 }
 
 .peak-marker {
   stroke: #d97706;
   stroke-width: 1.2;
   stroke-dasharray: 4 4;
+  vector-effect: non-scaling-stroke;
 }
 
 .evidence-focus {
@@ -805,8 +785,14 @@ watch(
   min-width: 0;
   margin: 0;
   display: grid;
-  grid-template-rows: auto auto auto;
-  gap: 8px;
+  grid-template-rows: auto auto auto auto auto;
+  gap: 10px;
+}
+
+.focus-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
 }
 
 .focus-row {
@@ -835,11 +821,11 @@ watch(
 }
 
 .focus-chart {
-  height: 84px;
+  height: 170px;
   border: 1px solid #e6ecf4;
   border-radius: 10px;
   background: #ffffff;
-  padding: 6px;
+  padding: 8px;
 }
 
 .focus-svg {
@@ -862,79 +848,6 @@ watch(
   font-weight: 700;
 }
 
-.comparison-grid {
-  min-height: 0;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.grid-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.grid-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.grid-meta {
-  font-size: 12px;
-  color: #64748b;
-}
-
-.grid-cards {
-  min-height: 0;
-  overflow: auto;
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(220px, 260px);
-  gap: 8px;
-  align-content: start;
-  padding-bottom: 2px;
-}
-
-.mini-card {
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 7px;
-  background: #f8fafc;
-  cursor: pointer;
-  min-width: 0;
-}
-
-.mini-card.active {
-  border-color: #3b82f6;
-  background: #eff6ff;
-}
-
-.mini-head {
-  font-size: 12px;
-  font-weight: 700;
-  color: #334155;
-  margin-bottom: 6px;
-  display: flex;
-  justify-content: space-between;
-  gap: 6px;
-  align-items: center;
-}
-
-.mini-peak {
-  color: #b45309;
-  font-size: 11px;
-}
-
-.mini-svg {
-  width: 100%;
-  height: 44px;
-}
-
 .mini-lane {
   fill: #f8fafc;
 }
@@ -950,36 +863,13 @@ watch(
 .mini-raw {
   fill: none;
   stroke: #111827;
-  stroke-width: 2.2;
+  stroke-width: 1.4;
 }
 
 .mini-act {
   fill: none;
   stroke: #f59e0b;
-  stroke-width: 2;
-}
-
-.mini-meta {
-  margin-top: 6px;
-  font-size: 11px;
-  color: #64748b;
-}
-
-.link-preview {
-  padding: 10px 12px;
-}
-
-.link-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.link-code {
-  margin-top: 6px;
-  font-size: 12px;
-  color: #475569;
-  word-break: break-word;
+  stroke-width: 1.3;
 }
 
 @media (max-width: 1280px) {
@@ -993,14 +883,6 @@ watch(
 
   .match-preview {
     display: none;
-  }
-
-  .overlay-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .overlay-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .focus-row {

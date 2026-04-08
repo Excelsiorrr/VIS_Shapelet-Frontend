@@ -55,6 +55,7 @@
 
 <script setup>
 import { onMounted, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import axios from "@/scripts/axios.js";
 import BMetaBar from "@/components/PartB/BMetaBar.vue";
 import BShapeletGallery from "@/components/PartB/BShapeletGallery.vue";
@@ -63,6 +64,7 @@ import BShapeletEvidencePanel from "@/components/PartB/BShapeletEvidencePanel.vu
 import BClassStatsTable from "@/components/PartB/BClassStatsTable.vue";
 
 const datasetName = ref(localStorage.getItem("shapeletDataset") || "mcce");
+const route = useRoute();
 
 const meta = ref(null);
 const metaLoading = ref(false);
@@ -78,6 +80,22 @@ const galleryError = ref("");
 const selectedShapeletId = ref("");
 const galleryLimit = 500;
 const classStatsVisible = ref(false);
+
+const parseNumber = (value, fallback = null) => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+};
+
+const applyQueryContext = () => {
+  datasetName.value = String(route.query.dataset || localStorage.getItem("shapeletDataset") || "mcce");
+  const queryScope = route.query.scope ? String(route.query.scope) : "";
+  const queryOmega = parseNumber(route.query.omega);
+  const queryShapeletId = route.query.shapelet_id ? String(route.query.shapelet_id) : "";
+
+  if (queryScope) scope.value = queryScope;
+  if (Number.isFinite(queryOmega)) omega.value = queryOmega;
+  if (queryShapeletId) selectedShapeletId.value = queryShapeletId;
+};
 
 const fetchMeta = async () => {
   if (!datasetName.value) return;
@@ -116,6 +134,17 @@ const fetchGallery = async () => {
     const data = response.data || {};
     galleryItems.value = data.items || [];
     galleryTotal.value = Number(data.total || 0);
+    if (galleryItems.value.length) {
+      const queryShapeletId = route.query.shapelet_id ? String(route.query.shapelet_id) : "";
+      if (queryShapeletId) {
+        const exists = galleryItems.value.some(
+          (item) => String(item?.shapelet_id || "") === queryShapeletId
+        );
+        if (exists) {
+          selectedShapeletId.value = queryShapeletId;
+        }
+      }
+    }
     if (!selectedShapeletId.value && galleryItems.value.length) {
       selectedShapeletId.value = String(galleryItems.value[0].shapelet_id || "");
     }
@@ -142,7 +171,18 @@ watch(
   }
 );
 
+watch(
+  () => route.query,
+  () => {
+    applyQueryContext();
+    fetchMeta();
+    fetchGallery();
+  },
+  { deep: true }
+);
+
 onMounted(() => {
+  applyQueryContext();
   fetchMeta();
   fetchGallery();
 });

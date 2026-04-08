@@ -10,6 +10,20 @@ const routes = [
     path: '/shapelet-library',
     name: 'ShapeletLibraryPanel',
     component: import('../views/PartB.vue')
+  },
+  {
+    path: '/match-locate',
+    name: 'MatchLocatePanel',
+    component: import('../views/PartC.vue')
+  },
+  {
+    path: '/what-if',
+    name: 'WhatIfPanel',
+    component: import('../views/PartE.vue')
+  },
+  {
+    path: '/part-c',
+    redirect: '/match-locate'
   }
 ]
 

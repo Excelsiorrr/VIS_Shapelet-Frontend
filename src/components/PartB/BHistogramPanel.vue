@@ -119,6 +119,7 @@ const cellDetail = ref(null);
 const histogramData = ref(null);
 const lastUpdated = ref(null);
 const selectedCell = ref(null);
+const selectedDistBin = ref(null);
 
 const omegaText = computed(() => Number(props.omega || 0).toFixed(2));
 const lastUpdatedText = computed(() => {
@@ -270,6 +271,22 @@ const buildHeatmapData = (matrix) => {
     }
   }
   return result;
+};
+
+const getSelectedDistRange = () => {
+  if (selectedDistBin.value === null || selectedDistBin.value === undefined) return null;
+  const edges = histogramData.value?.bin_edges;
+  if (!Array.isArray(edges) || edges.length < 2) return null;
+  const idx = Number(selectedDistBin.value);
+  if (!Number.isInteger(idx) || idx < 0 || idx >= edges.length - 1) return null;
+  const start = Number(edges[idx] ?? 0);
+  const end = Number(edges[idx + 1] ?? start);
+  return {
+    idx,
+    start,
+    end,
+    isLast: idx === edges.length - 2,
+  };
 };
 
 const describeCellStatus = (cellValue, stats, omega) => {
@@ -501,6 +518,15 @@ const renderDistChart = () => {
   }
   const omega = Number(props.omega ?? 0);
   const safeOmega = Math.min(Math.max(omega, stats.rangeMin), stats.rangeMax);
+  const counts = Array.isArray(data.counts) ? data.counts.map((value) => Number(value ?? 0)) : [];
+  const edges = Array.isArray(data.bin_edges) ? data.bin_edges.map((value) => Number(value ?? 0)) : [];
+  const maxCount = Math.max(...counts, 1);
+  const binRects = counts.map((count, idx) => {
+    const start = Number(edges[idx] ?? stats.rangeMin);
+    const end = Number(edges[idx + 1] ?? start);
+    const height = Math.max(0.08, Math.min(0.34, count / maxCount));
+    return [start, end, height, idx];
+  });
 
   distChart.setOption(
     {
@@ -543,12 +569,80 @@ const renderDistChart = () => {
       },
       series: [
         {
+          name: "bin-hit-area",
+          type: "custom",
+          data: binRects,
+          renderItem(params, api) {
+            const x0 = api.coord([api.value(0), 0.5])[0];
+            const x1 = api.coord([api.value(1), 0.5])[0];
+            const centerY = api.coord([api.value(0), 0.5])[1];
+            const height = Math.max(6, api.size([0, api.value(2)])[1]);
+            const idx = Number(api.value(3));
+            const isSelected = selectedDistBin.value === idx;
+            return {
+              type: "rect",
+              shape: {
+                x: Math.min(x0, x1),
+                y: centerY - height / 2,
+                width: Math.max(2, Math.abs(x1 - x0)),
+                height,
+                r: 3,
+              },
+              style: {
+                fill: isSelected ? "rgba(239, 68, 68, 0.22)" : "rgba(15, 23, 42, 0.01)",
+                stroke: isSelected ? "rgba(239, 68, 68, 0.9)" : "transparent",
+                lineWidth: isSelected ? 1 : 0,
+              },
+            };
+          },
+          z: 3,
+          silent: false,
+          tooltip: {
+            show: true,
+            formatter: (params) => {
+              const tuple = Array.isArray(params?.value)
+                ? params.value
+                : Array.isArray(params?.data?.value)
+                  ? params.data.value
+                  : Array.isArray(params?.data)
+                    ? params.data
+                    : [];
+              const [start, end, , idx] = tuple;
+              const mass = counts[Number(idx)] ?? 0;
+              return [
+                `bin: ${idx}`,
+                `range: [${Number(start).toFixed(4)}, ${Number(end).toFixed(4)})`,
+                `density: ${Number(mass).toFixed(4)}`,
+              ].join("<br/>");
+            },
+          },
+        },
+        {
           type: "custom",
           data: [[stats.rangeMin, stats.rangeMax]],
           renderItem(params, api) {
             const start = api.coord([api.value(0), 0.5]);
             const end = api.coord([api.value(1), 0.5]);
             const height = 12;
+            const p50x = api.coord([stats.p50, 0.5])[0];
+            const p90x = api.coord([stats.p90, 0.5])[0];
+            const rightBound = end[0];
+            const makeLabel = (x, text, color) => {
+              const preferRight = x + 34 <= rightBound;
+              const labelX = preferRight ? x + 4 : x - 4;
+              return {
+                type: "text",
+                style: {
+                  x: labelX,
+                  y: start[1] - 12,
+                  text,
+                  fill: color,
+                  font: "11px sans-serif",
+                  textAlign: preferRight ? "left" : "right",
+                  textVerticalAlign: "bottom",
+                },
+              };
+            };
             return {
               type: "group",
               children: [
@@ -596,9 +690,9 @@ const renderDistChart = () => {
                 {
                   type: "line",
                   shape: {
-                    x1: api.coord([stats.p50, 0.5])[0],
+                    x1: p50x,
                     y1: start[1] - 10,
-                    x2: api.coord([stats.p50, 0.5])[0],
+                    x2: p50x,
                     y2: start[1] + 10,
                   },
                   style: {
@@ -609,9 +703,9 @@ const renderDistChart = () => {
                 {
                   type: "line",
                   shape: {
-                    x1: api.coord([stats.p90, 0.5])[0],
+                    x1: p90x,
                     y1: start[1] - 10,
-                    x2: api.coord([stats.p90, 0.5])[0],
+                    x2: p90x,
                     y2: start[1] + 10,
                   },
                   style: {
@@ -619,6 +713,8 @@ const renderDistChart = () => {
                     lineWidth: 1.2,
                   },
                 },
+                makeLabel(p50x, `median ${stats.p50.toFixed(3)}`, "#2563eb"),
+                makeLabel(p90x, `P90 ${stats.p90.toFixed(3)}`, "#7c3aed"),
               ],
             };
           },
@@ -648,22 +744,20 @@ const renderDistChart = () => {
           silent: true,
         },
       ],
-      graphic: [
-        {
-          type: "text",
-          left: 30,
-          top: 2,
-          style: {
-            text: `median ${stats.p50.toFixed(3)}   P90 ${stats.p90.toFixed(3)}`,
-            fill: "#64748b",
-            font: "11px sans-serif",
-          },
-          silent: true,
-        },
-      ],
+      graphic: [],
     },
     true
   );
+
+  distChart.off("click");
+  distChart.on("click", (params) => {
+    if (params?.seriesName !== "bin-hit-area") return;
+    const clickedIdx = Number(params?.value?.[3]);
+    if (!Number.isInteger(clickedIdx)) return;
+    selectedDistBin.value = selectedDistBin.value === clickedIdx ? null : clickedIdx;
+    renderDistChart();
+    renderHeatmapChart();
+  });
 };
 
 const renderHeatmapChart = () => {
@@ -678,6 +772,23 @@ const renderHeatmapChart = () => {
   const rows = data.matrix.length;
   const cols = data.matrix[0].length;
   const heatmapData = buildHeatmapData(data.matrix);
+  const selectedRange = getSelectedDistRange();
+  const highlightedHeatmapData = selectedRange
+    ? heatmapData.map((point) => {
+        const value = Number(point[2] ?? 0);
+        const hit = selectedRange.isLast
+          ? value >= selectedRange.start && value <= selectedRange.end
+          : value >= selectedRange.start && value < selectedRange.end;
+        if (!hit) return point;
+        return {
+          value: point,
+          itemStyle: {
+            borderColor: "#ef4444",
+            borderWidth: 1,
+          },
+        };
+      })
+    : heatmapData;
 
   heatmapChart.off("click");
   heatmapChart.setOption(
@@ -692,7 +803,14 @@ const renderHeatmapChart = () => {
       tooltip: {
         position: "top",
         formatter: (params) => {
-          const [x, y, v] = params.data || [];
+          const tuple = Array.isArray(params?.data)
+            ? params.data
+            : Array.isArray(params?.data?.value)
+              ? params.data.value
+              : Array.isArray(params?.value)
+                ? params.value
+                : [];
+          const [x, y, v] = tuple;
           const cellValue = Number(v ?? 0);
           const stats = histogramStats.value;
           const status = describeCellStatus(cellValue, stats, Number(props.omega ?? 0));
@@ -747,7 +865,7 @@ const renderHeatmapChart = () => {
       series: [
         {
           type: "heatmap",
-          data: heatmapData,
+          data: highlightedHeatmapData,
           progressive: 0,
           emphasis: {
             itemStyle: {
@@ -851,6 +969,7 @@ const fetchMatrixSummary = async () => {
     histogramData.value = null;
     errorMessage.value = "";
     lastUpdated.value = null;
+    selectedDistBin.value = null;
     selectedCell.value = null;
     cellDetail.value = null;
     clearDetailChart();
@@ -859,6 +978,7 @@ const fetchMatrixSummary = async () => {
   }
   loading.value = true;
   errorMessage.value = "";
+  selectedDistBin.value = null;
   selectedCell.value = null;
   cellDetail.value = null;
   clearDetailChart();

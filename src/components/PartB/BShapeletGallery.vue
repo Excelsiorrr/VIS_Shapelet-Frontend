@@ -288,9 +288,10 @@ const getPreviewPolyline = (item, large = false) => {
       .hero-line {
         fill: none;
         stroke: #1d4ed8;
-        stroke-width: 1.8;
+        stroke-width: 1.6;
         stroke-linecap: round;
         stroke-linejoin: round;
+        vector-effect: non-scaling-stroke;
       }
     }
 
@@ -370,9 +371,10 @@ const getPreviewPolyline = (item, large = false) => {
       .sparkline-line {
         fill: none;
         stroke: #2563eb;
-        stroke-width: 1.4;
+        stroke-width: 1.6;
         stroke-linecap: round;
         stroke-linejoin: round;
+        vector-effect: non-scaling-stroke;
       }
     }
   }
